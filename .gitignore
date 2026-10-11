@@ -72,3 +72,6 @@ screenshots/
 /.narrow*.mjs
 **/*live.json
 
+
+.nx/polygraph
+.nx/self-healing
