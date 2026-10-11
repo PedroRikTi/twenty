@@ -1,5 +1,6 @@
 import fs from 'fs';
-import { execSync } from 'child_process';
+
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'leticia-clinic-evolution-secret-key-2026';
 
 const systemPrompt = `=Você é a Sofia, assistente virtual humanizada, empática e eficiente da Dra. Letícia Chaves (Médica · CRM-MG 114660).
 
@@ -208,7 +209,7 @@ const liveWorkflow = [
             "parameters": [
               {
                 "name": "apikey",
-                "value": "leticia-clinic-evolution-secret-key-2026"
+                "value": EVOLUTION_API_KEY
               },
               {
                 "name": "Content-Type",
