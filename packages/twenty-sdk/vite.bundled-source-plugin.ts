@@ -13,6 +13,10 @@ const keepVirtualModuleImportsPlugin: esbuild.Plugin = {
     build.onResolve(
       { filter: NON_RELATIVE_IMPORT_PATTERN },
       ({ path: importPath }) => {
+        if (path.isAbsolute(importPath)) {
+          return undefined;
+        }
+
         if (importPath.startsWith(SOURCE_ALIAS_IMPORT_PREFIX)) {
           return undefined;
         }

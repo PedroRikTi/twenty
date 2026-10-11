@@ -1,0 +1,364 @@
+{
+  "name": "Clínica Dra. Letícia - Agendamento Automático & Notificações",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agendamento-consulta",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "id": "node-webhook-agendamento",
+      "name": "1. Webhook Novo Agendamento"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json.body || $input.first().json;\n\nconst nome = (input.nome || input.name || 'Paciente').trim();\nconst email = (input.email || '').trim().toLowerCase();\nlet rawPhone = (input.whatsapp || input.telefone || input.phone || '').replace(/\\D/g, '');\n\nif (!rawPhone.startsWith('55') && rawPhone.length >= 10) {\n  rawPhone = '55' + rawPhone;\n}\nconst localPhone = rawPhone.startsWith('55') ? rawPhone.slice(2) : rawPhone;\n\nconst dataHoraIso = input.dataHora || input.dateTime || new Date().toISOString();\nlet dataFormatada = dataHoraIso;\ntry {\n  const d = new Date(dataHoraIso);\n  dataFormatada = d.toLocaleDateString('pt-BR', {\n    day: '2-digit',\n    month: '2-digit',\n    year: 'numeric',\n    hour: '2-digit',\n    minute: '2-digit',\n    timeZone: 'America/Sao_Paulo'\n  });\n} catch (e) {}\n\nconst nameParts = nome.split(/\\s+/);\nconst firstName = nameParts[0];\nconst lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';\n\nreturn [{\n  json: {\n    nome,\n    firstName,\n    lastName,\n    email,\n    rawPhone,\n    localPhone,\n    dataHoraIso,\n    dataFormatada,\n    modalidade: input.modalidade || 'PRESENCIAL',\n    motivo: input.motivo || 'Consulta médica geral'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "id": "node-formatar-dados",
+      "name": "2. Formatar Dados"
+    },
+    {
+      "parameters": {
+        "url": "=http://server:3000/rest/people",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer SUA_CHAVE_API_DO_TWENTY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ],
+      "id": "node-buscar-paciente",
+      "name": "3. Buscar Pacientes Twenty"
+    },
+    {
+      "parameters": {
+        "jsCode": "const dados = $('2. Formatar Dados').first().json;\nconst existingPeople = $input.first().json?.data?.people || [];\n\nconst normalizedTarget = dados.rawPhone.replace(/\\D/g, '');\nconst targetWithoutDdi = dados.localPhone.replace(/\\D/g, '');\n\nlet found = null;\nfor (const p of existingPeople) {\n  const w = (p.whatsapp?.primaryPhoneNumber || '').replace(/\\D/g, '');\n  const ph = (p.phones?.primaryPhoneNumber || '').replace(/\\D/g, '');\n  const em = (p.emails?.primaryEmail || '').toLowerCase();\n\n  if (\n    (w && (w === normalizedTarget || w === targetWithoutDdi)) ||\n    (ph && (ph === normalizedTarget || ph === targetWithoutDdi)) ||\n    (dados.email && em === dados.email)\n  ) {\n    found = p;\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    ...dados,\n    patientExists: !!found,\n    patientId: found ? found.id : null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ],
+      "id": "node-verificar-existente",
+      "name": "4. Checar Paciente Existente"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.patientExists }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        300
+      ],
+      "id": "node-if-paciente-existe",
+      "name": "5. Paciente Já Existe?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://server:3000/rest/people",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer SUA_CHAVE_API_DO_TWENTY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"name\": {\n    \"firstName\": \"{{ $('4. Checar Paciente Existente').item.json.firstName }}\",\n    \"lastName\": \"{{ $('4. Checar Paciente Existente').item.json.lastName }}\"\n  },\n  \"whatsapp\": {\n    \"primaryPhoneNumber\": \"{{ $('4. Checar Paciente Existente').item.json.localPhone }}\",\n    \"primaryPhoneCountryCode\": \"BR\",\n    \"primaryPhoneCallingCode\": \"+55\"\n  },\n  \"phones\": {\n    \"primaryPhoneNumber\": \"{{ $('4. Checar Paciente Existente').item.json.localPhone }}\",\n    \"primaryPhoneCountryCode\": \"BR\",\n    \"primaryPhoneCallingCode\": \"+55\"\n  },\n  \"emails\": {\n    \"primaryEmail\": \"{{ $('4. Checar Paciente Existente').item.json.email }}\"\n  },\n  \"etapa\": \"AGENDADO\",\n  \"origem\": \"WHATSAPP_DIRETO\",\n  \"canalPreferido\": \"WHATSAPP\",\n  \"optInWhatsapp\": true\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        420
+      ],
+      "id": "node-criar-paciente",
+      "name": "6B. Criar Novo Paciente"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=http://server:3000/rest/people/{{ $json.patientId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer SUA_CHAVE_API_DO_TWENTY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"etapa\": \"AGENDADO\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        200
+      ],
+      "id": "node-atualizar-paciente",
+      "name": "6A. Atualizar Etapa para Agendado"
+    },
+    {
+      "parameters": {
+        "jsCode": "const dados = $('4. Checar Paciente Existente').first().json;\nlet patientId = dados.patientId;\n\nif (!patientId) {\n  const created = $input.first().json?.data?.createPerson || $input.first().json?.data;\n  patientId = created?.id;\n}\n\nreturn [{\n  json: {\n    ...dados,\n    patientId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        300
+      ],
+      "id": "node-unificar-paciente",
+      "name": "7. Unificar ID do Paciente"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://server:3000/rest/consultas",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer SUA_CHAVE_API_DO_TWENTY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"pacienteId\": \"{{ $json.patientId }}\",\n  \"inicio\": \"{{ $json.dataHoraIso }}\",\n  \"statusConsulta\": \"CONFIRMADA\",\n  \"tipoConsulta\": \"PRIMEIRA_CONSULTA\",\n  \"modalidadeAtendimento\": \"{{ $json.modalidade }}\",\n  \"motivoResumo\": \"{{ $json.motivo }}\",\n  \"origemAgendamento\": \"WHATSAPP\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        300
+      ],
+      "id": "node-criar-consulta",
+      "name": "8. Criar Consulta no Twenty"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://evolution-api:8080/message/sendText/leticia-chaves",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "SUA_CHAVE_API_EVOLUTION"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('7. Unificar ID do Paciente').item.json.rawPhone }}\",\n  \"text\": \"Olá, {{ $('7. Unificar ID do Paciente').item.json.firstName }}! 🌿\\n\\nSua consulta com a *Dra. Letícia Chaves* está confirmada!\\n\\n📅 *Data e Horário:* {{ $('7. Unificar ID do Paciente').item.json.dataFormatada }}\\n🩺 *Modalidade:* {{ $('7. Unificar ID do Paciente').item.json.modalidade }}\\n\\n📍 *Local:* [Endereço do consultório em Belo Horizonte]\\n\\nEnviamos também a confirmação por e-mail. Se precisar de qualquer orientação antes da consulta, é só nos chamar por aqui! 💙\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        200
+      ],
+      "id": "node-enviar-whatsapp-paciente",
+      "name": "9. Enviar WhatsApp p/ Paciente"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Consulta agendada e notificações enviadas com sucesso!\",\n  \"pacienteId\": \"{{ $('7. Unificar ID do Paciente').item.json.patientId }}\",\n  \"dataFormatada\": \"{{ $('7. Unificar ID do Paciente').item.json.dataFormatada }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2400,
+        300
+      ],
+      "id": "node-resposta-webhook",
+      "name": "10. Responder Webhook (Sucesso)"
+    }
+  ],
+  "connections": {
+    "1. Webhook Novo Agendamento": {
+      "main": [
+        [
+          {
+            "node": "2. Formatar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Formatar Dados": {
+      "main": [
+        [
+          {
+            "node": "3. Buscar Pacientes Twenty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Buscar Pacientes Twenty": {
+      "main": [
+        [
+          {
+            "node": "4. Checar Paciente Existente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Checar Paciente Existente": {
+      "main": [
+        [
+          {
+            "node": "5. Paciente Já Existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Paciente Já Existe?": {
+      "main": [
+        [
+          {
+            "node": "6A. Atualizar Etapa para Agendado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "6B. Criar Novo Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6A. Atualizar Etapa para Agendado": {
+      "main": [
+        [
+          {
+            "node": "7. Unificar ID do Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6B. Criar Novo Paciente": {
+      "main": [
+        [
+          {
+            "node": "7. Unificar ID do Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. Unificar ID do Paciente": {
+      "main": [
+        [
+          {
+            "node": "8. Criar Consulta no Twenty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8. Criar Consulta no Twenty": {
+      "main": [
+        [
+          {
+            "node": "9. Enviar WhatsApp p/ Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9. Enviar WhatsApp p/ Paciente": {
+      "main": [
+        [
+          {
+            "node": "10. Responder Webhook (Sucesso)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

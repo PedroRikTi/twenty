@@ -5,5 +5,5 @@ export const deleteFrontComponentStorageItem = ({
   storageType,
   key,
 }: FrontComponentStorageScope & { key: string }): void => {
-  window[storageType].removeItem(`${namespace}${key}`);
+  ((window as any)[storageType] as Storage).removeItem(`${namespace}${key}`);
 };

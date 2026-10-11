@@ -12,7 +12,7 @@ export const createOpenCommandConfirmationModalAdapter = (
     'openCommandConfirmationModal'
   >,
 ): OpenCommandConfirmationModalFunction => {
-  return async (params) => {
+  return async (params: any) => {
     if (pendingCommandConfirmationModalPromiseCallbacks.current !== null) {
       throw new CustomError(
         'A confirmation modal is already pending for this front component',

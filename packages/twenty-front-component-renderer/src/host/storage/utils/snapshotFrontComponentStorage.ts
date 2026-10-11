@@ -5,7 +5,7 @@ export const snapshotFrontComponentStorage = ({
   namespace,
   storageType,
 }: FrontComponentStorageScope): Record<string, string> => {
-  const storage = window[storageType];
+  const storage = (window as any)[storageType] as Storage;
 
   return Object.fromEntries(
     getNamespacedStorageKeys({ storage, namespace }).map((namespacedKey) => [

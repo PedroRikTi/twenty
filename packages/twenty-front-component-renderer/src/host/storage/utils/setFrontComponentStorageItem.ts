@@ -21,7 +21,7 @@ export const setFrontComponentStorageItem = ({
     );
   }
 
-  const storage = window[storageType];
+  const storage = (window as any)[storageType] as Storage;
   const namespacedKey = `${namespace}${key}`;
 
   let otherEntriesTotalLength = 0;

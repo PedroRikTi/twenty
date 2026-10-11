@@ -5,7 +5,7 @@ export const clearFrontComponentStorage = ({
   namespace,
   storageType,
 }: FrontComponentStorageScope): void => {
-  const storage = window[storageType];
+  const storage = (window as any)[storageType] as Storage;
 
   for (const namespacedKey of getNamespacedStorageKeys({
     storage,
